@@ -3,21 +3,32 @@ close all
 LX = 1;
 LY = 1;
 
-NP = 16;
-xLen = LX*NP+1; yLen = LY*NP+1;
-sxp = linspace(0, LX, xLen); syp = linspace(0, LY, yLen);
+f=4;
+NP = 2^f+1;
+xLen = LX*NP; yLen = LY*NP;
+sxp = linspace(0, LX, xLen); syp = linspace(0, LY, yLen+1); syp(end) = [];
+dx = sxp(2)-sxp(1);
 
-%Def rho ICs
-%rho0 = @(x,y) (x + y);
-rho = zeros(xLen, yLen);
+plotResults = true;
+%% Def Source Term ICs
+%Laplace(u) = g
 
-for i=1:xLen
-    for j=1:yLen
-        %rho(i,j) = rho0(sxp(i), syp(j));
-        rho(i,j) = sin(2*pi/LX.*sxp(i)).*sin(1*pi/LY.*syp(j));
-    end
-end
+g0_func = @(x,y) sin(2*pi/LX.*x).*sin(2*pi/LY.*y);
+u_exact_func = @(x,y) -1*((2*pi/LX)^2+(2*pi/LY)^2)^(-1)*sin(2*pi/LX.*x).*sin(2*pi/LY.*y);
 
-surf(rho)
+[X,Y]=meshgrid(sxp,syp);
+g0 = g0_func(X,Y);
+u_exact = u_exact_func(X,Y);
 
+g = fft(g0, size(g0,2), 2);
+
+
+%Solve 2D poisson for u using FACR
+[uFACR, maxErr] = FACR_Solver(xLen, yLen, NP, LX, dx, f, g0, g, u_exact, plotResults);
+
+%Solve 2D poisson for u using FFT
+uFFT = FFT_MethodWtoPsi(g0, NP, dx, X, Y);
+
+figure;
+surf(uFFT)
 
