@@ -21,10 +21,10 @@ u(pos + 1,:) = A.\b;
 %Lower levels 1, 2, ..., f-1
 for level=2:f
     denom = denom*2;
-    %If oscillations occur in top half of u it's because 0:8*level isnt big
-    %enough to reach the top line
+    %If oscillations occur in top half of u it's because the upper limit
+    %  of splits isnt big enough to reach the top line
     %Maybe this should be something like 2^level-1
-    for splits=0:8*level 
+    for splits=0:2^(level-1) 
         pos = yLenEven/denom + 2*splits*yLenEven/denom;
         if pos<yLen
             %Unless we overshoot the upper BC, solve for u(pos+1)
@@ -45,6 +45,7 @@ for level=2:f
                     disp(['Pos = ', num2str(pos + 1)])
                     disp(['Upper BC = ', num2str(yLen)])
                 end
+                %(dx^2)*
                 RHS = (dx^2)*g_ni(pos + 1, :, f+1-level) - u(pos - yLenEven/denom + 1,:) - u(yLen,:);
                 A = T_ni(pos + 1,:,f+1-level); b = RHS;
                 u(pos + 1,:) = A.\b;
