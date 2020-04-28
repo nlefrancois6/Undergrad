@@ -7,7 +7,7 @@ Wfft(1,1) = 0;
 Psifft = (2*(cos(pi/(NP+1)*i)+cos(pi/(NP+1)*j)-2)/(dx^2)).*Wfft;
 
 
-Psi = ifft2(Psifft, 'symmetric');
+Psi = ifft2(Psifft,'symmetric');
 
 end
 
