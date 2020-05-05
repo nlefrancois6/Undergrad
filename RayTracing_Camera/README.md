@@ -1,0 +1,1 @@
+Take density and temperature data for smoke in a 3D box and use ray-tracing to calculate the illumination at each point using a specified light source location, then take a 2D picture of the box from a specified camera location
