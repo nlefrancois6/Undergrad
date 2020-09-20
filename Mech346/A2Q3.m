@@ -8,7 +8,7 @@ Qfuel = Qcore/vfracFuel;
 Rint = 1/(Ri*hi); Rz = log(Ro/Ri)/kZ; Rconv = 1/(hc*Ro);
 Rth = Rint + Rz + Rconv;
 
-T1 = 2*pi*Qcore*s^2*Rth^(1) + Tw
+T1 = Qcore*s^2*Rth^(1)/(2*pi) + Tw
 
 Tmax = T1 + Qfuel*Ri^2/(4*kU)
 
