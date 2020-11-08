@@ -79,7 +79,7 @@ Qdot_totFunc = @(Qdot_e, Qdot_b) Qdot_b + Qdot_e; %Could rewrite w/nested functi
 %Might use avg(avg(Qe,Qb),Qe+Qb) to improve our initial guess
 
 %Get Ts from each terminal path and take the average as Ts_guess
-Ts_e_guess = @(Te, Qdot_e) Te - Qdot_e*R_conv_e;
+Ts_e_guess = @(Te, Qdot_e, U) Te - Qdot_e*R_conv_e(U);
 Ts_b_guess = @(Tb, Qdot_b, Ts_old) Tb - Qdot_b*R_r_e(Tb, Ts_old);
 Ts_guess_initial = @(Ts_e, Ts_b) (Ts_e + Ts_b)/2; %Could rewrite this w/nested functions
 Ts_guess_good = @(Qdot_tot, Tm_a, Lc, La) Tw - Qdot_tot*Rth_s(Tm_a, Lc, La);
@@ -104,8 +104,8 @@ if strcmp(testCase,'Covered')
     U = 1;
     %Calculate Qdot_tot for first time step
     %Looks like i also need to pass anon funcs as args here
-    [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U);
-    Qdot_tot_store(1) = Qdot_tot;
+    [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
+    Qdot_tot_store(1) = Qdot_tot
     %For initial test, I can stop here and just check that Qdot_convergence
     %works given reasonable Te, Tb, U inputs.
     %Run the rest of the time steps, reusing Tm, Ts from last time step as initial guess
@@ -113,7 +113,7 @@ if strcmp(testCase,'Covered')
     for i=2:times(end)
         t = times(i);
         %Get wind velocity at time t, use velocity to get convective htc
-        %U = U(t); h_c_e = h_c_e_func(U)
+        %U = U(t);
         %Initial T distribution
         Te = Te(t); Tb = Tb(t);
         [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U);
@@ -178,7 +178,7 @@ hold off;
 %}
 
 %% Helper Functions
-function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U)
+function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good)
     %Use the iterative method to find Qdot_tot given a T distribution guess
     %Note: Qdot_e,b,tot inputs are functions. Might run into overloading trouble here
   
@@ -187,15 +187,15 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U)
     Qdot_b = Qdot_b_initial(Tb, Tm, Ts, Lc, La);
     Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b); Qdot_tot_old = Qdot_tot;
     %Calculate first updated guess for Ts
-    Ts_e = Ts_e_guess(Te, Qdot_e); Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
+    Ts_e = Ts_e_guess(Te, Qdot_e, U); Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
     Ts = Ts_guess_initial(Ts_e, Ts_b);
     %Calculate first updated guess for Tm
-    T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts_guess, Lc);
+    T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts, Lc);
     Tm = Tm_a_guess(T2, T3);
     %Update guesses for fluxes
-    Qdot_e = Qdot_e_good(Te, Ts, U); 
+    Qdot_e = Qdot_e_good(Te, Ts, U);
     Qdot_b = Qdot_b_good(Tb, Ts);
-    Qdot_tot = Qdot_tot(Qdot_e, Qdot_b);
+    Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b);
     %Check convergence
     dQ_Tot = Qdot_tot - Qdot_tot_old;
 
@@ -203,12 +203,12 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U)
         Qdot_tot_old = Qdot_tot;
         %Update guesses for T distribution
         Ts = Ts_guess_good(Qdot_tot, Tm, Lc, La);
-        T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts_guess, Lc);
+        T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts, Lc);
         Tm = Tm_a_guess(T2, T3);
         %Update guesses for fluxes
         Qdot_e = Qdot_e_good(Te, Ts, U); 
         Qdot_b = Qdot_b_good(Tb, Ts);
-        Qdot_tot = Qdot_tot(Qdot_e, Qdot_b);
+        Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b);
         %Check convergence
         dQ_Tot = Qdot_tot - Qdot_tot_old;
     end
