@@ -26,14 +26,18 @@ times = 1; %Time span of study. Will be an array eventually, probably in hours. 
 %% Calculations For Uncovered Pool
 if strcmp(testCase,'Uncovered')
     Qdot_solar = @(t) alpha_w*irradiance(t)*A; %solar heating
-
+    
+    U = 4;
     %Define htc's
     h_r = @(Tb) 4*eps_c*sig*((Tw+Tb)/2)^3; %rad from pool surface to sky
-    h_conv = 1; %convection from pool surface to air. Will be a function of Nu(U)
+    rho_a = 1.292; mu_a = 1.729*10^(-5); Pr_a = 0.7362; %All redundant stuff from covered
+    Re = @(U) rho_a*U*L/mu_a;
+    Nu = @(U) 0.664*Re(U)^0.5*Pr_a; %Nusselt correlation for h_conv_e
+    h_conv = @(U) Nu(U)*k_a/L; %convection from pool surface to air
 
     %Heat fluxes
     Qdot_rad = @(t) h_r(Tb_func(t))*A*(Tw-Tb_func(t));
-    Qdot_conv = @(t) h_conv*A*(Tw-Te_func(t));
+    Qdot_conv = @(t) h_conv(U)*A*(Tw-Te_func(t));
     Qdot_tot = @(t) Qdot_rad(t) + Qdot_conv(t);
     Qdot_heating = @(t) Qdot_tot(t) - Qdot_solar(t);
 
@@ -59,7 +63,7 @@ h_r_e = @(Tb, Ts) 4*eps_c*sig*((Tb+Ts)/2)^3; %rad from cover to sky
 rho_a = 1.292; mu_a = 1.729*10^(-5); Pr_a = 0.7362;
 Re = @(U) rho_a*U*L/mu_a;
 Nu = @(U) 0.664*Re(U)^0.5*Pr_a; %Nusselt correlation for h_conv_e
-h_conv_e = @(U) Nu(U)*k_a/L; %convection from pool surface to air. Will be a function of wind velocity
+h_conv_e = @(U) Nu(U)*k_a/L; %convection from pool surface to air
 
 %Define Thermal Resistances
 R_r_a = @(Tm_a) 1/(A*h_r_a(Tm_a));
@@ -95,8 +99,8 @@ T3_guess = @(Qdot_tot, Ts_guess, Lc) Ts_guess + Qdot_tot*R_cond_c(Lc);
 Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2; %Could rewrite this w/nested functions
 
 %Initial guesses for T distribution
-Tm = @(t) (Te(t) + Tw)/2; %Tm should be roughly halfway between the water and air
-Ts = @(t) Tw + 0.9*(Te(t)-Tw); %Ts should be pretty close to the air
+%Tm = @(t) (Te(t) + Tw)/2; %Tm should be roughly halfway between the water and air
+%Ts = @(t) Tw + 0.9*(Te(t)-Tw); %Ts should be pretty close to the air
 
 %% Calculation for Covered Pool
 if strcmp(testCase,'Covered')
@@ -106,7 +110,7 @@ if strcmp(testCase,'Covered')
     Te = Te_func(t); Tb = Tb_func(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te; %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
     %Also need to get wind velocity at time t to get h_c_e
     %U = U(t); 
-    U = 1;
+    U = 4;
     %Calculate Qdot_tot for first time step
     %Looks like i also need to pass anon funcs as args here
     [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
