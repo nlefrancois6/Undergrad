@@ -1,15 +1,15 @@
 clear all;
 close all;
-testCase = 'Covered'; %Can be 'Uncovered' or 'Covered'
+testCase = 'Uncovered'; %Can be 'Uncovered' or 'Covered'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
 Tw = 298; %Water temperature to maintain
 %May not need this since we only need Qdot
 %c_water = 4200; rho_water = 997; m_pool = rho_water*V; c_pool = m_pool*c_water;
-eps_w = 1; n_w = 1; %water data
-eps_c = 1; n_c = 1; k_c = 1; %cover data
-La = 0.1; Lc = 0.1; %Thickness of cover sheets and air pocket. We can try to optimize these later
-n_a = 1; k_a = 1; %air data
+eps_w = 0.955; n_w = 1.33; %water data
+eps_c = 0.9; n_c = 1.59; k_c = 0.191; %cover data
+La = 0.01; Lc = 0.0127; %Thickness of cover sheets and air pocket. We can try to optimize these later
+n_a = 1; k_a = 0.02364; %air data
 sig = 5.67*1e-8; %Stefan-Boltzmann constant
 
 %Reflective losses
@@ -18,10 +18,10 @@ alpha_w = alpha(n_w); alpha_c = alpha(n_c); alpha_a = alpha(n_a);
 
 %Define energy info. Will load this from a data file eventually
 irradiance = @(t) 1;
-Te = @(t) 279;
-Tb = @(t) Te(t) - temp_convert((temp_convert(Te(t),'K','F') - 20),'F','K'); %Tb = Te - 20F, convert back to K
+Te_func = @(t) 279;
+Tb_func = @(t) temp_convert((temp_convert(Te_func(t),'K','F') - 20),'F','K'); %Tb = Te - 20F, convert back to K
 %Cost = @(Qdot_heating, t_heat) [integral over time of e_price, Qdot_heating]
-times = 10; %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
+times = 1; %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
 
 %% Calculations For Uncovered Pool
 if strcmp(testCase,'Uncovered')
@@ -32,13 +32,16 @@ if strcmp(testCase,'Uncovered')
     h_conv = 1; %convection from pool surface to air. Will be a function of Nu(U)
 
     %Heat fluxes
-    Qdot_rad = @(t) h_r(Tb(t))*A*(Tw-Tb(t));
-    Qdot_conv = @(t) h_conv*A*(Tw-Te(t));
+    Qdot_rad = @(t) h_r(Tb_func(t))*A*(Tw-Tb_func(t));
+    Qdot_conv = @(t) h_conv*A*(Tw-Te_func(t));
     Qdot_tot = @(t) Qdot_rad(t) + Qdot_conv(t);
     Qdot_heating = @(t) Qdot_tot(t) - Qdot_solar(t);
 
     %Result:
-    Qdot_heating_uncovered = Qdot_heating(times)
+    Qdot_rad = Qdot_rad(times)
+    Qdot_conv = Qdot_conv(times)
+    Qdot_tot = Qdot_tot(times)
+    Qdot_heating_uncovered = Qdot_heating(times);
     %Not sure if these are the right input formats for the integral
     %Cost_uncovered = Cost(Qdot_heating_uncovered, times)
     
@@ -53,7 +56,9 @@ Qdot_solar = @(t) alpha_tot*irradiance(t)*A; %solar heating
 %Define htc's
 h_r_a = @(Tm_a) 4*eps_c*sig*Tm_a^3; %rad from first cover sheet to second cover sheet
 h_r_e = @(Tb, Ts) 4*eps_c*sig*((Tb+Ts)/2)^3; %rad from cover to sky
-Nu = @(U) 1; %Nusselt correlation for h_conv_e
+rho_a = 1.292; mu_a = 1.729*10^(-5); Pr_a = 0.7362;
+Re = @(U) rho_a*U*L/mu_a;
+Nu = @(U) 0.664*Re(U)^0.5*Pr_a; %Nusselt correlation for h_conv_e
 h_conv_e = @(U) Nu(U)*k_a/L; %convection from pool surface to air. Will be a function of wind velocity
 
 %Define Thermal Resistances
@@ -71,22 +76,22 @@ Rth_s = @(Tm_a, Lc, La) 2*R_cond_c(Lc) + R_parallel(La, Tm_a);
 Rth_2 = @(Lc) R_cond_c(Lc);
 
 %Heat flux along each path
-Qdot_e_initial = @(Te, Tm_a, Lc, La, U) (Te-Tw)/Rth_e(Tm_a, Lc, La, U);
-Qdot_b_initial = @(Tb, Tm_a, Ts, Lc, La) (Tb-Tw)/Rth_b(Tm_a, Tb, Ts, Lc, La);
-Qdot_e_good = @(Te, Ts, U) (Te-Ts)/R_conv_e(U);
-Qdot_b_good = @(Tb, Ts) (Tb-Ts)/R_r_e(Tb, Ts);
+Qdot_e_initial = @(Te, Tm_a, Lc, La, U) (Tw-Te)/Rth_e(Tm_a, Lc, La, U);
+Qdot_b_initial = @(Tb, Tm_a, Ts, Lc, La) (Tw-Tb)/Rth_b(Tm_a, Tb, Ts, Lc, La);
+Qdot_e_good = @(Te, Ts, U) (Ts-Te)/R_conv_e(U);
+Qdot_b_good = @(Tb, Ts) (Ts-Tb)/R_r_e(Tb, Ts);
 Qdot_totFunc = @(Qdot_e, Qdot_b) Qdot_b + Qdot_e; %Could rewrite w/nested functions and not have to directly eval them to use as inputs
 %Might use avg(avg(Qe,Qb),Qe+Qb) to improve our initial guess
 
 %Get Ts from each terminal path and take the average as Ts_guess
-Ts_e_guess = @(Te, Qdot_e, U) Te - Qdot_e*R_conv_e(U);
-Ts_b_guess = @(Tb, Qdot_b, Ts_old) Tb - Qdot_b*R_r_e(Tb, Ts_old);
+Ts_e_guess = @(Te, Qdot_e, U) Te + Qdot_e*R_conv_e(U);
+Ts_b_guess = @(Tb, Qdot_b, Ts_old) Tb + Qdot_b*R_r_e(Tb, Ts_old);
 Ts_guess_initial = @(Ts_e, Ts_b) (Ts_e + Ts_b)/2; %Could rewrite this w/nested functions
 Ts_guess_good = @(Qdot_tot, Tm_a, Lc, La) Tw - Qdot_tot*Rth_s(Tm_a, Lc, La);
 
 %Get the intermediary temperatures needed for R_rad_a
-T2_guess = @(Qdot_tot, Lc) Tw + Qdot_tot*Rth_2(Lc);
-T3_guess = @(Qdot_tot, Ts_guess, Lc) Ts_guess - Qdot_tot*R_cond_c(Lc);
+T2_guess = @(Qdot_tot, Lc) Tw - Qdot_tot*Rth_2(Lc);
+T3_guess = @(Qdot_tot, Ts_guess, Lc) Ts_guess + Qdot_tot*R_cond_c(Lc);
 Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2; %Could rewrite this w/nested functions
 
 %Initial guesses for T distribution
@@ -95,10 +100,10 @@ Ts = @(t) Tw + 0.9*(Te(t)-Tw); %Ts should be pretty close to the air
 
 %% Calculation for Covered Pool
 if strcmp(testCase,'Covered')
-    tol = 100;
+    tol = 1;
     Qdot_tot_store = zeros(length(times),1);
     t = times(1); %this will eventually be in a for loop to go through the time span
-    Te = Te(t); Tb = Tb(t); Tm = 0.5*(Tw-Te); Ts = 0.9*(Tw-Te); %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
+    Te = Te_func(t); Tb = Tb_func(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te; %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
     %Also need to get wind velocity at time t to get h_c_e
     %U = U(t); 
     U = 1;
@@ -115,7 +120,7 @@ if strcmp(testCase,'Covered')
         %Get wind velocity at time t, use velocity to get convective htc
         %U = U(t);
         %Initial T distribution
-        Te = Te(t); Tb = Tb(t);
+        Te = Te_func(t); Tb = Tb_func(t);
         [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U);
         Qdot_tot_store(i) = Qdot_tot;
     end
@@ -183,32 +188,43 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
     %Note: Qdot_e,b,tot inputs are functions. Might run into overloading trouble here
   
     %Calculate initial fluxes
-    Qdot_e = Qdot_e_initial(Te, Tm, Lc, La, U); 
+    Qdot_e = Qdot_e_initial(Te, Tm, Lc, La, U);
     Qdot_b = Qdot_b_initial(Tb, Tm, Ts, Lc, La);
-    Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b); Qdot_tot_old = Qdot_tot;
+    Qdot_tot = Qdot_e + Qdot_b;
+    Qdot_tot_old = Qdot_tot;
     %Calculate first updated guess for Ts
-    Ts_e = Ts_e_guess(Te, Qdot_e, U); Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
+    Ts_e = Ts_e_guess(Te, Qdot_e, U);
+    Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
     Ts = Ts_guess_initial(Ts_e, Ts_b);
     %Calculate first updated guess for Tm
-    T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts, Lc);
+    T2 = T2_guess(Qdot_tot, Lc); 
+    T3 = T3_guess(Qdot_tot, Ts, Lc);
     Tm = Tm_a_guess(T2, T3);
     %Update guesses for fluxes
     Qdot_e = Qdot_e_good(Te, Ts, U);
     Qdot_b = Qdot_b_good(Tb, Ts);
-    Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b);
+    Qdot_tot = Qdot_e + Qdot_b;
     %Check convergence
     dQ_Tot = Qdot_tot - Qdot_tot_old;
 
     while abs(dQ_Tot) > tol
         Qdot_tot_old = Qdot_tot;
-        %Update guesses for T distribution
-        Ts = Ts_guess_good(Qdot_tot, Tm, Lc, La);
-        T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts, Lc);
+        %Update guesses for T distribution. 
+        %Currently replacing my "good" method which diverges with the
+        %initial guess method which treats Qe and Qb as parallel
+        %Ts = Ts_guess_good(Qdot_tot, Tm, Lc, La);
+        Qdot_e = Qdot_e_initial(Te, Tm, Lc, La, U);
+        Qdot_b = Qdot_b_initial(Tb, Tm, Ts, Lc, La);
+        Ts_e = Ts_e_guess(Te, Qdot_e, U);
+        Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
+        Ts = Ts_guess_initial(Ts_e, Ts_b);
+        T2 = T2_guess(Qdot_tot, Lc);
+        T3 = T3_guess(Qdot_tot, Ts, Lc);
         Tm = Tm_a_guess(T2, T3);
         %Update guesses for fluxes
-        Qdot_e = Qdot_e_good(Te, Ts, U); 
-        Qdot_b = Qdot_b_good(Tb, Ts);
-        Qdot_tot = Qdot_totFunc(Qdot_e, Qdot_b);
+        Qdot_e = Qdot_e_good(Te, Ts, U)
+        Qdot_b = Qdot_b_good(Tb, Ts)
+        Qdot_tot = Qdot_e + Qdot_b
         %Check convergence
         dQ_Tot = Qdot_tot - Qdot_tot_old;
     end
