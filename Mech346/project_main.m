@@ -4,8 +4,8 @@ testCase = 'Covered'; %Can be 'Uncovered' or 'Covered'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
 Tw = 298; %Water temperature to maintain
-cp_w = 4200; rho_w = 997; 
-mu_w = 1; k_w = 0.1; %fake placeholder numbers, need to get the real ones
+cp_w = 4181; rho_w = 997; 
+mu_w = 0.891*1e-3; k_w = 0.6; %fake placeholder numbers, need to get the real ones
 eps_w = 0.955; n_w = 1.33; %water data
 eps_c = 0.9; n_c = 1.59; k_c = 0.191; %cover data
 La = 0.01; Lc = 0.0127; %Thickness of cover sheets and air pocket. We can try to optimize these later
@@ -67,7 +67,7 @@ h_conv_e = @(U) Nu_e(U)*k_a/L; %convection from pool surface to air
 Gr_w = @(T2) 9.81*(Tw-T2)*L^3/(Tw*(mu_w/rho_w)^2);
 Pr_w = mu_w*cp_w/k_w;
 Ra_w = @(T2) Gr_w(T2)*Pr_w;
-h_conv_w = @(T2) 0.54*Ra_w(T2)^(1/4); %Might need to change if Ra > 1e7
+h_conv_w = @(T2) 0.15*Ra_w(T2)^(1/3); %Ra = 1e13, probably need a different correlation
 
 %Define Thermal Resistances
 R_r_a = @(Tm_a) 1/(A*h_r_a(Tm_a));
@@ -207,7 +207,7 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
     Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
     Ts = Ts_guess_initial(Ts_e, Ts_b);
     %Calculate first updated guess for Tm
-    T2 = T2_guess(Qdot_tot, Lc, T2); 
+    T2 = T2_guess(Qdot_tot, Lc, T2);
     T3 = T3_guess(Qdot_tot, Ts, Lc);
     Tm = Tm_a_guess(T2, T3);
     %Update guesses for fluxes
@@ -228,8 +228,8 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
         Ts_e = Ts_e_guess(Te, Qdot_e, U);
         Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
         Ts = Ts_guess_initial(Ts_e, Ts_b);
-        T2 = T2_guess(Qdot_tot, Lc, T2);
-        T3 = T3_guess(Qdot_tot, Ts, Lc);
+        T2 = T2_guess(Qdot_tot, Lc, T2)
+        T3 = T3_guess(Qdot_tot, Ts, Lc)
         Tm = Tm_a_guess(T2, T3);
         %Update guesses for fluxes
         Qdot_e = Qdot_e_good(Te, Ts, U);
