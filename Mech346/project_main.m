@@ -1,6 +1,6 @@
-clear all;
-close all;
-testCase = 'Covered'; %Can be 'Uncovered' or 'Covered'
+%clear all;
+%close all;
+testCase = 'Uncovered'; %Can be 'Uncovered' or 'Covered'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
 Tw = 298; %Water temperature to maintain
@@ -17,45 +17,54 @@ alpha = @(n) 1 - (n-1)/(n+1);
 alpha_w = alpha(n_w); alpha_c = alpha(n_c); alpha_a = alpha(n_a);
 
 %Define energy info. Will load this from a data file eventually
-irradiance = @(t) 1;
-Te_func = @(t) 279;
-Tb_func = @(t) temp_convert((temp_convert(Te_func(t),'K','F') - 20),'F','K'); %Tb = Te - 20F, convert back to K
-%Cost = @(Qdot_heating, t_heat) [integral over time of e_price, Qdot_heating]
-times = 1; %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
+Us = [4 1 1];
+irradiances = [1 1 1];
+Tes = [279 281 275];
+Tbs = Tes - 10;
+
+times = length(Us); %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
 
 %% Calculations For Uncovered Pool
 if strcmp(testCase,'Uncovered')
-    Qdot_solar = @(t) alpha_w*irradiance(t)*A; %solar heating
+    Qdot_solar = @(t) alpha_w*irradiances(t)*A; %solar heating
     
-    U = 4;
     %Define htc's
     h_r = @(Tb) 4*eps_c*sig*((Tw+Tb)/2)^3; %rad from pool surface to sky
     rho_a = 1.292; mu_a = 1.729*10^(-5); Pr_a = 0.7362; %All redundant stuff from covered
     Re = @(U) rho_a*U*L/mu_a;
     Nu = @(U) 0.664*Re(U)^0.5*Pr_a; %Nusselt correlation for h_conv_e
     h_conv = @(U) Nu(U)*k_a/L; %convection from pool surface to air
-
-    %Heat fluxes
-    Qdot_rad = @(t) h_r(Tb_func(t))*A*(Tw-Tb_func(t));
-    Qdot_conv = @(t) h_conv(U)*A*(Tw-Te_func(t));
-    Qdot_tot = @(t) Qdot_rad(t) + Qdot_conv(t);
-    Qdot_heating = @(t) Qdot_tot(t) - Qdot_solar(t);
-
-    %Result:
-    Qdot_rad = Qdot_rad(times);
-    Qdot_conv = Qdot_conv(times);
-    Qdot_tot = Qdot_tot(times);
-    Qdot_heating_uncovered = Qdot_heating(times);
-    %Not sure if these are the right input formats for the integral
-    %Cost_uncovered = Cost(Qdot_heating_uncovered, times)
     
+    %Heat fluxes
+    Qdot_rad_func = @(t) h_r(Tbs(t))*A*(Tw-Tbs(t));
+    Qdot_conv_func = @(t) h_conv(Us(t))*A*(Tw-Tes(t));
+    Qdot_tot_func = @(t) Qdot_rad_func(t) + Qdot_conv_func(t);
+    Qdot_heating_func = @(t) Qdot_tot_func(t) - Qdot_solar(t);
+    
+    powerUsage = zeros(1,times);
+    powerCumulative = zeros(1,times);
+    for t=1:times
+        %U = Us(t); Tb = Tbs(t); Te = Tes(t);
+        %Result:
+        Qdot_rad = Qdot_rad_func(t);
+        Qdot_conv = Qdot_conv_func(t);
+        Qdot_tot = Qdot_tot_func(t);
+        Qdot_heating_uncovered = Qdot_heating_func(t);
+        powerCumulative(t) = Qdot_heating_uncovered + sum(powerUsage); %Could plot the running cost using this data
+        powerUsage(t) = Qdot_heating_uncovered;
+    end
+    %Calculate total heating costs over the period of interest
+    sumPower = sum(powerUsage);
+    Cost_uncovered = electricity_price(sumPower);
+    %Calculate running cost
+    running_cost = electricity_price(powerUsage);
     %Might want to save the results, although this part is explicit and
     %should be pretty fast
 end
 %% Setup for Covered Pool
 
 alpha_tot = alpha_w*alpha_c^2*alpha_a^2*alpha_c^2; %reflective losses
-Qdot_solar = @(t) alpha_tot*irradiance(t)*A; %solar heating
+Qdot_solar = alpha_tot*irradiances.*A; %solar heating
 
 %Define htc's
 h_r_a = @(Tm_a) 4*eps_c*sig*Tm_a^3; %rad from first cover sheet to second cover sheet
@@ -110,70 +119,41 @@ Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2; %Could rewrite this 
 %% Calculation for Covered Pool
 if strcmp(testCase,'Covered')
     tol = 1;
-    Qdot_tot_store = zeros(length(times),1);
-    t = times(1); %this will eventually be in a for loop to go through the time span
-    Te = Te_func(t); Tb = Tb_func(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te; %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
+    powerUsage = zeros(1,times);
+    powerCumulative = zeros(1,times);
+    
+    %Calculate the first time step with initial guesses
+    t = 1;
+    Te = Tes(t); Tb = Tbs(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te; %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
     %Also need to get wind velocity at time t to get h_c_e
-    %U = U(t); 
-    U = 4;
+    U = Us(t);
     %Calculate Qdot_tot for first time step
     %Looks like i also need to pass anon funcs as args here
     [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
-    Qdot_tot_store(1) = Qdot_tot
-    %For initial test, I can stop here and just check that Qdot_convergence
-    %works given reasonable Te, Tb, U inputs.
+    Qdot_heating = Qdot_tot - Qdot_solar(t);
+    powerCumulative(1) = Qdot_heating + sum(powerUsage);
+    powerUsage(1) = Qdot_heating;
+
     %Run the rest of the time steps, reusing Tm, Ts from last time step as initial guess
-    %{
-    for i=2:times(end)
-        t = times(i);
+    for t=2:times
         %Get wind velocity at time t, use velocity to get convective htc
-        %U = U(t);
+        U = Us(t);
         %Initial T distribution
-        Te = Te_func(t); Tb = Tb_func(t);
-        [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U);
-        Qdot_tot_store(i) = Qdot_tot;
+        Te = Tes(t); Tb = Tbs(t);
+        [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
+        Qdot_heating = Qdot_tot - Qdot_solar(t);
+        powerCumulative(t) = Qdot_heating + sum(powerUsage);
+        powerUsage(t) = Qdot_heating;
     end
 
     %Result:
-    Qdot_heating_covered = Qdot_tot - Qdot_solar(times) %Calculate the heating energy used at each time step in the array
-    %Not sure if these are the right input formats for the integral
-    %Cost_uncovered = Cost(Qdot_heating_uncovered, times)
-    %}
+    sumPower = sum(powerUsage);
+    Cost_covered = electricity_price(sumPower);
+    %Calculate running cost
+    running_cost = electricity_price(powerUsage);
     %Might want to save the results so I don't have to run the loops
     %every time if it's slow
 end
-
-
-%{
-%This section has now been replaced by a more compact/reusable section
-%Iterate until Qdot_tot converges
-t = times; %this will eventually change in a for loop to go through the time span
-Te = Te(t); Tb = Tb(t); Tm = Tm(t); Ts = Ts(t); %Initial T distribution
-%For t>0, could use previous temps as a better guess
-%Calculate initial fluxes
-Qdot_e = Qdot_e(Te, Tm, Lc, La); 
-Qdot_b = Qdot_b(Tb, Tm, Ts, Lc, La);
-Qdot_tot = Qdot_tot(Qdot_e, Qdot_b); Qdot_tot_old = Qdot_tot;
-
-while abs(dQ_Tot) > tol
-    %Update guesses for T distribution
-    Ts_e = Ts_e(Te, Qdot_e); Ts_b = Ts_b(Tb, Qdot_b, Ts);
-    Ts = Ts_guess(Ts_e, Ts,b); %Could store and track Ts for convergence if i wanted before updating
-    T2 = T2_guess(Qdot_tot, Lc); T3 = T3_guess(Qdot_tot, Ts_guess, Lc);
-    Tm = Tm_a_guess(T2, T3);
-    %Update guesses for fluxes
-    Qdot_e = Qdot_e(Te, Tm, Lc, La); 
-    Qdot_b = Qdot_b(Tb, Tm, Ts, Lc, La);
-    Qdot_tot = Qdot_tot(Qdot_e, Qdot_b);
-    %Check convergence
-    dQ_Tot = Qdot_tot - Qdot_tot_old;
-end
-
-%Calculate heating energy used at this time step
-Qdot_heating =  Qdot_tot - Qdot_solar(t);
-%Not sure if these are the right input formats for the integral
-%Cost_uncovered = Cost(Qdot_heating_uncovered, times)
-%}
 
 %% Plotting Results
 %Could plot Qdot_heating as a function of time 
@@ -240,19 +220,14 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
     end
 
 end
-function Tout = temp_convert(Tin, Uin, Uout)
-%Convert from units of Uin to units of Uout
-    if strcmp(Uin,'F')&&strcmp(Uout,'K')
-        Tout = 273.15 + ((Tin - 32)*(5/9));
-    elseif strcmp(Uin,'K')&&strcmp(Uout,'F')
-        Tout = 32 + (Tin - 273.15)*9/5;
-    else
-        disp('Not a supported unit conversion')
-    end
-end
-function price = e_price(Qt)
-%Qt is the power used, in kWh
-%Price is the cost of that amount of power, in dollars
+
+function price = electricity_price(Qt)
+%Qt is the power used, in Watt hours. Convert to kWh first
+%sumHeating is the amount of electricity we've already used in Watt hours, to check when
+%we go over 40 kWh
+Qt = Qt/1000;
+%sumHeating = sumHeating/1000;
+%Price is the cost of that amount of power, in dollars (HydroQuebec Pricing)
     if Qt<40
         price = 0.0608*Qt;
     else
