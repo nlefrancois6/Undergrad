@@ -3,9 +3,9 @@
 testCase = 'Covered'; %Can be 'Uncovered' or 'Covered', or 'Debug'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
-Tw = 298; %Water temperature to maintain
+Tw = 298; %Water temperature we want to maintain
 cp_w = 4181; rho_w = 997; 
-mu_w = 0.891*1e-3; k_w = 0.6; %fake placeholder numbers, need to get the real ones
+mu_w = 0.891*1e-3; k_w = 0.6;
 eps_w = 0.955; n_w = 1.33; %water data
 eps_c = 0.9; n_c = 1.59; k_c = 0.191; %cover data
 La = 0.01; Lc = 0.0127; %Thickness of cover sheets and air pocket. We can try to optimize these later
@@ -19,15 +19,14 @@ alpha_w = alpha(n_w); alpha_c = alpha(n_c); alpha_a = alpha(n_a);
 %Load the weather data for Alert over our 3 month period
 weatherData = csvread('Alert-CSV-for-noah-noHeader.csv');
 Us = weatherData(:,3); %Wind speed (m/s)
-irradiances = weatherData(:,2)*1e-3; %Direct normal radiation (kJ/m2)
+irradiances = weatherData(:,2); %Direct normal radiation (kJ/m2)
 Tes = weatherData(:,1) + 273; %Dry bulb temperature (C) converted to (K)
 Tbs = Tes - 10;
 
-times = length(Us); %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
+times = length(Us); %Number of hours in our timespan of 3 months
 
 %% Calculations For Uncovered Pool
 if strcmp(testCase,'Uncovered')
-    %Qdot_solar = @(t) alpha_w*irradiances(t)*A; %solar heating
     Qdot_solar = alpha_w*irradiances*A; %solar heating
     
     %Define htc's
@@ -48,19 +47,17 @@ if strcmp(testCase,'Uncovered')
     loss_unfiltered = zeros(1,times);
     powerUsage_unfiltered = zeros(1,times);
     for t=1:times
-        %U = Us(t); Tb = Tbs(t); Te = Tes(t);
-        %Result:
+        %Calculate flux at each time step
         Qdot_rad = Qdot_rad_func(t);
         Qdot_conv = Qdot_conv_func(t);
         Qdot_tot = Qdot_tot_func(t);
+        %If the solar heating exceeds the lossed flux, no heating is necessary
         if Qdot_solar(t) < Qdot_tot
         Qdot_heating_uncovered = Qdot_tot - Qdot_solar(t);
         else
            Qdot_heating_uncovered = 0;
         end
-        loss_unfiltered(t) = Qdot_tot;
-        powerUsage_unfiltered(t) = Qdot_tot - Qdot_solar(t);
-        powerCumulative(t) = Qdot_heating_uncovered + sum(powerUsage); %Could plot the running cost using this data
+        powerCumulative(t) = Qdot_heating_uncovered + sum(powerUsage);
         powerUsage(t) = Qdot_heating_uncovered;
     end
     %Calculate total heating costs over the period of interest
@@ -69,7 +66,7 @@ if strcmp(testCase,'Uncovered')
     %Calculate running cost
     running_cost = electricity_price(powerCumulative);
     
-    %Plot the results. Might want to save the data too
+    %Plot the results
     figure;
     plot(powerUsage)
     xlabel('Hour')
@@ -97,7 +94,7 @@ h_conv_e = @(U) Nu_e(U)*k_a/L; %convection from pool surface to air
 Gr_w = @(T2) 9.81*(Tw-T2)*L^3/(Tw*(mu_w/rho_w)^2);
 Pr_w = mu_w*cp_w/k_w;
 Ra_w = @(T2) Gr_w(T2)*Pr_w;
-h_conv_w = @(T2) 0.15*Ra_w(T2)^(1/3); %Ra = 1e13, probably need a different correlation
+h_conv_w = @(T2) 0.15*Ra_w(T2)^(1/3); %Ra = 1e13, might need a different correlation
 
 %Define Thermal Resistances
 R_r_a = @(Tm_a) 1/(A*h_r_a(Tm_a));
@@ -119,23 +116,19 @@ Qdot_e_initial = @(Te, Tm_a, T2, Lc, La, U) (Tw-Te)/Rth_e(Tm_a, T2, Lc, La, U);
 Qdot_b_initial = @(Tb, Tm_a, T2, Ts, Lc, La) (Tw-Tb)/Rth_b(Tm_a, T2, Tb, Ts, Lc, La);
 Qdot_e_good = @(Te, Ts, U) (Ts-Te)/R_conv_e(U);
 Qdot_b_good = @(Tb, Ts) (Ts-Tb)/R_r_e(Tb, Ts);
-Qdot_totFunc = @(Qdot_e, Qdot_b) Qdot_b + Qdot_e; %Could rewrite w/nested functions and not have to directly eval them to use as inputs
-%Might use avg(avg(Qe,Qb),Qe+Qb) to improve our initial guess
+Qdot_totFunc = @(Qdot_e, Qdot_b) Qdot_b + Qdot_e;
+%Could use avg(avg(Qe,Qb),Qe+Qb) to improve our initial guess
 
 %Get Ts from each terminal path and take the average as Ts_guess
 Ts_e_guess = @(Te, Qdot_e, U) Te + Qdot_e*R_conv_e(U);
 Ts_b_guess = @(Tb, Qdot_b, Ts_old) Tb + Qdot_b*R_r_e(Tb, Ts_old);
-Ts_guess_initial = @(Ts_e, Ts_b) (Ts_e + Ts_b)/2; %Could rewrite this w/nested functions
+Ts_guess_initial = @(Ts_e, Ts_b) (Ts_e + Ts_b)/2;
 Ts_guess_good = @(Qdot_tot, Tm_a, T2, Lc, La) Tw - Qdot_tot*Rth_s(Tm_a, T2, Lc, La);
 
 %Get the intermediary temperatures needed for R_rad_a
 T2_guess = @(Qdot_tot, Lc, T2) Tw - Qdot_tot*Rth_2(Lc, T2);
 T3_guess = @(Qdot_tot, Ts_guess, Lc) Ts_guess + Qdot_tot*R_cond_c(Lc);
-Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2; %Could rewrite this w/nested functions
-
-%Initial guesses for T distribution
-%Tm = @(t) (Te(t) + Tw)/2; %Tm should be roughly halfway between the water and air
-%Ts = @(t) Tw + 0.9*(Te(t)-Tw); %Ts should be pretty close to the air
+Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2;
 
 
 %% Debugging divergence at t=27
@@ -155,35 +148,35 @@ if strcmp(testCase,'Covered')
     
     %Calculate the first time step with initial guesses
     t = 1;
-    Te = Tes(t); Tb = Tbs(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te; %Initial T distribution. Replace Tm(t), Ts(t) with reasonable guesses between Te, Tw
+    %Initial T distribution. Tm and Ts are initial guesses
+    Te = Tes(t); Tb = Tbs(t); Tm = 0.5*(Tw-Te) + Te; Ts = 0.9*(Tw-Te) + Te;
     %Also need to get wind velocity at time t to get h_c_e
     U = Us(t);
     %Calculate Qdot_tot for first time step
-    %Looks like i also need to pass anon funcs as args here
     [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good);
     if Qdot_solar(t) < Qdot_tot
         Qdot_heating_covered = Qdot_tot - Qdot_solar(t);
     else
         Qdot_heating_covered = 0;
     end
-    loss_unfiltered(t) = Qdot_tot;
-    powerUsage_unfiltered(t) = Qdot_tot - Qdot_solar(t);
     powerCumulative(1) = Qdot_heating_covered + sum(powerUsage);
     powerUsage(1) = Qdot_heating_covered;
 
     %Run the rest of the time steps, reusing Tm, Ts from last time step as initial guess
     for t=2:times
-        %Get wind velocity at time t, use velocity to get convective htc
+        %Get wind velocity at time t, use velocity to get convective h
         U = Us(t);
         %Initial T distribution
         Te = Tes(t); Tb = Tbs(t);
         [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good);
         if isnan(Qdot_tot)
+            %For debugging. Found the issue was due to U=0 blowing up R_e
             x = ['Qdot diverged at t=',num2str(t)];
             disp(x)
             break
         end
         Tmstore = Tm; Tsstore = Ts;
+        %If the solar heating exceeds the lossed flux, no heating is necessary
         if Qdot_solar(t) < Qdot_tot
             Qdot_heating_covered = Qdot_tot - Qdot_solar(t);
         else
@@ -195,13 +188,13 @@ if strcmp(testCase,'Covered')
         powerUsage(t) = Qdot_heating_covered;
     end
 
-    %Result:
+    %Results
     sumPower = sum(powerUsage);
     Cost_covered = electricity_price(sumPower);
     %Calculate running cost
     running_cost = electricity_price(powerCumulative);
     
-    %Plot the results. Might want to save the data too
+    %Plot the results
     figure;
     plot(powerUsage)
     xlabel('Hour')
@@ -213,37 +206,7 @@ if strcmp(testCase,'Covered')
     xlabel('Hour')
     ylabel('Cost ($)')
     title('Running Cost of Heating for Covered Pool')
-    
-    %{
-    figure;
-    plot(powerUsage_unfiltered)
-    xlabel('Hour')
-    ylabel('Heating Power Required (W)')
-    title('Heater Power for Covered Pool')
-    
-    figure;
-    plot(loss_unfiltered)
-    xlabel('Hour')
-    ylabel('Power Loss (W)')
-    title('Power Loss for Covered Pool')
-    %}
 end
-
-%% Plotting Results
-%Could plot Qdot_heating as a function of time 
-%Could compare this plot for covered vs uncovered
-%Could also overlay plots of the incident radiation intensity and/or air temperature
-%{
-plot(times, Qdot_heating_uncovered, 'DisplayName', 'Without Solar Blanket')
-hold on;
-plot(times, Qdot_heating_covered, 'DisplayName', 'With Solar Blanket')
-plot(times, Te(times), 'DisplayName', 'Ambient Air Temperature')
-plot(times, irradiance(times), 'DisplayName', 'Direct Normal Irradiance')
-title('Heating Power Required To Maintain Water Temperature')
-xlabel('Date') %could make nice xticks showing the actual date instead of just time elapsed
-ylabel('Heating Power [W]')
-hold off;
-%}
 
 %% Helper Functions
 function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good)
@@ -251,7 +214,7 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
     
     if U < 0.01
         %Set lower limit on U to avoid blowup when there is no wind. This
-        %limit sets R_conv_e = 0.5005 
+        %limit results in R_conv_e = 0.5005 
         U = 0.05;
     end
         
@@ -279,8 +242,13 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
     while abs(dQ_Tot) > tol
         Qdot_tot_old = Qdot_tot;
         %Update guesses for T distribution. 
+        %{
         %Currently replacing my "good" method which diverges with the
         %initial guess method which treats Qe and Qb as parallel
+        %Could address this issue by taking smaller/smoother steps, ie when we
+        update Ts take an average of the old guess and the new guess. This
+        could avoid our problem of Ts leaving [Te,Tw] which obviously causes divergence
+        %}
         %Ts = Ts_guess_good(Qdot_tot, Tm, Lc, La);
         Qdot_e = Qdot_e_initial(Te, Tm, T2, Lc, La, U);
         Qdot_b = Qdot_b_initial(Tb, Tm, T2, Ts, Lc, La);
@@ -302,10 +270,7 @@ end
 
 function price = electricity_price(Qt)
 %Qt is the power used, in Watt hours. Convert to kWh first
-%sumHeating is the amount of electricity we've already used in Watt hours, to check when
-%we go over 40 kWh
 Qt = Qt/1000;
-%sumHeating = sumHeating/1000;
 %Price is the cost of that amount of power, in dollars (HydroQuebec Pricing)
     if Qt<40
         price = 0.0608*Qt;
