@@ -1,6 +1,6 @@
 %clear all;
 %close all;
-testCase = 'Uncovered'; %Can be 'Uncovered' or 'Covered'
+testCase = 'Covered'; %Can be 'Uncovered' or 'Covered', or 'Debug'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
 Tw = 298; %Water temperature to maintain
@@ -16,17 +16,19 @@ sig = 5.67*1e-8; %Stefan-Boltzmann constant
 alpha = @(n) 1 - (n-1)/(n+1);
 alpha_w = alpha(n_w); alpha_c = alpha(n_c); alpha_a = alpha(n_a);
 
-%Define energy info. Will load this from a data file eventually
-Us = [4 1 1];
-irradiances = [1 1 1];
-Tes = [279 281 275];
+%Load the weather data for Alert over our 3 month period
+weatherData = csvread('Alert-CSV-for-noah-noHeader.csv');
+Us = weatherData(:,3); %Wind speed (m/s)
+irradiances = weatherData(:,2)*1e-3; %Direct normal radiation (kJ/m2)
+Tes = weatherData(:,1) + 273; %Dry bulb temperature (C) converted to (K)
 Tbs = Tes - 10;
 
 times = length(Us); %Time span of study. Will be an array eventually, probably in hours. Covering 3 months
 
 %% Calculations For Uncovered Pool
 if strcmp(testCase,'Uncovered')
-    Qdot_solar = @(t) alpha_w*irradiances(t)*A; %solar heating
+    %Qdot_solar = @(t) alpha_w*irradiances(t)*A; %solar heating
+    Qdot_solar = alpha_w*irradiances*A; %solar heating
     
     %Define htc's
     h_r = @(Tb) 4*eps_c*sig*((Tw+Tb)/2)^3; %rad from pool surface to sky
@@ -43,13 +45,21 @@ if strcmp(testCase,'Uncovered')
     
     powerUsage = zeros(1,times);
     powerCumulative = zeros(1,times);
+    loss_unfiltered = zeros(1,times);
+    powerUsage_unfiltered = zeros(1,times);
     for t=1:times
         %U = Us(t); Tb = Tbs(t); Te = Tes(t);
         %Result:
         Qdot_rad = Qdot_rad_func(t);
         Qdot_conv = Qdot_conv_func(t);
         Qdot_tot = Qdot_tot_func(t);
-        Qdot_heating_uncovered = Qdot_heating_func(t);
+        if Qdot_solar(t) < Qdot_tot
+        Qdot_heating_uncovered = Qdot_tot - Qdot_solar(t);
+        else
+           Qdot_heating_uncovered = 0;
+        end
+        loss_unfiltered(t) = Qdot_tot;
+        powerUsage_unfiltered(t) = Qdot_tot - Qdot_solar(t);
         powerCumulative(t) = Qdot_heating_uncovered + sum(powerUsage); %Could plot the running cost using this data
         powerUsage(t) = Qdot_heating_uncovered;
     end
@@ -57,9 +67,20 @@ if strcmp(testCase,'Uncovered')
     sumPower = sum(powerUsage);
     Cost_uncovered = electricity_price(sumPower);
     %Calculate running cost
-    running_cost = electricity_price(powerUsage);
-    %Might want to save the results, although this part is explicit and
-    %should be pretty fast
+    running_cost = electricity_price(powerCumulative);
+    
+    %Plot the results. Might want to save the data too
+    figure;
+    plot(powerUsage)
+    xlabel('Hour')
+    ylabel('Heating Power Required (W)')
+    title('Heater Power for Uncovered Pool')
+    
+    figure;
+    plot(running_cost)
+    xlabel('Hour')
+    ylabel('Cost ($)')
+    title('Running Cost of Heating for Uncovered Pool')
 end
 %% Setup for Covered Pool
 
@@ -116,11 +137,21 @@ Tm_a_guess = @(T2_guess, T3_guess) (T2_guess + T3_guess)/2; %Could rewrite this 
 %Tm = @(t) (Te(t) + Tw)/2; %Tm should be roughly halfway between the water and air
 %Ts = @(t) Tw + 0.9*(Te(t)-Tw); %Ts should be pretty close to the air
 
+
+%% Debugging divergence at t=27
+if strcmp(testCase,'Debug')
+    t = 27; Ts = 278.2095; Tm = 288.086;
+    U = Us(t); Te = Tes(t); Tb = Tbs(t);
+
+    [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good);
+end
 %% Calculation for Covered Pool
 if strcmp(testCase,'Covered')
     tol = 1;
     powerUsage = zeros(1,times);
     powerCumulative = zeros(1,times);
+    loss_unfiltered = zeros(1,times);
+    powerUsage_unfiltered = zeros(1,times);
     
     %Calculate the first time step with initial guesses
     t = 1;
@@ -129,10 +160,16 @@ if strcmp(testCase,'Covered')
     U = Us(t);
     %Calculate Qdot_tot for first time step
     %Looks like i also need to pass anon funcs as args here
-    [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
-    Qdot_heating = Qdot_tot - Qdot_solar(t);
-    powerCumulative(1) = Qdot_heating + sum(powerUsage);
-    powerUsage(1) = Qdot_heating;
+    [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good);
+    if Qdot_solar(t) < Qdot_tot
+        Qdot_heating_covered = Qdot_tot - Qdot_solar(t);
+    else
+        Qdot_heating_covered = 0;
+    end
+    loss_unfiltered(t) = Qdot_tot;
+    powerUsage_unfiltered(t) = Qdot_tot - Qdot_solar(t);
+    powerCumulative(1) = Qdot_heating_covered + sum(powerUsage);
+    powerUsage(1) = Qdot_heating_covered;
 
     %Run the rest of the time steps, reusing Tm, Ts from last time step as initial guess
     for t=2:times
@@ -140,19 +177,56 @@ if strcmp(testCase,'Covered')
         U = Us(t);
         %Initial T distribution
         Te = Tes(t); Tb = Tbs(t);
-        [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good);
-        Qdot_heating = Qdot_tot - Qdot_solar(t);
-        powerCumulative(t) = Qdot_heating + sum(powerUsage);
-        powerUsage(t) = Qdot_heating;
+        [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good);
+        if isnan(Qdot_tot)
+            x = ['Qdot diverged at t=',num2str(t)];
+            disp(x)
+            break
+        end
+        Tmstore = Tm; Tsstore = Ts;
+        if Qdot_solar(t) < Qdot_tot
+            Qdot_heating_covered = Qdot_tot - Qdot_solar(t);
+        else
+           Qdot_heating_covered = 0;
+        end
+        loss_unfiltered(t) = Qdot_tot;
+        powerUsage_unfiltered(t) = Qdot_tot - Qdot_solar(t);
+        powerCumulative(t) = Qdot_heating_covered + sum(powerUsage);
+        powerUsage(t) = Qdot_heating_covered;
     end
 
     %Result:
     sumPower = sum(powerUsage);
     Cost_covered = electricity_price(sumPower);
     %Calculate running cost
-    running_cost = electricity_price(powerUsage);
-    %Might want to save the results so I don't have to run the loops
-    %every time if it's slow
+    running_cost = electricity_price(powerCumulative);
+    
+    %Plot the results. Might want to save the data too
+    figure;
+    plot(powerUsage)
+    xlabel('Hour')
+    ylabel('Heating Power Required (W)')
+    title('Heater Power for Covered Pool')
+    
+    figure;
+    plot(running_cost)
+    xlabel('Hour')
+    ylabel('Cost ($)')
+    title('Running Cost of Heating for Covered Pool')
+    
+    %{
+    figure;
+    plot(powerUsage_unfiltered)
+    xlabel('Hour')
+    ylabel('Heating Power Required (W)')
+    title('Heater Power for Covered Pool')
+    
+    figure;
+    plot(loss_unfiltered)
+    xlabel('Hour')
+    ylabel('Power Loss (W)')
+    title('Power Loss for Covered Pool')
+    %}
 end
 
 %% Plotting Results
@@ -172,10 +246,15 @@ hold off;
 %}
 
 %% Helper Functions
-function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Qdot_totFunc, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Ts_guess_good, Qdot_e_good, Qdot_b_good)
+function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good)
     %Use the iterative method to find Qdot_tot given a T distribution guess
-    %Note: Qdot_e,b,tot inputs are functions. Might run into overloading trouble here
-  
+    
+    if U < 0.01
+        %Set lower limit on U to avoid blowup when there is no wind. This
+        %limit sets R_conv_e = 0.5005 
+        U = 0.05;
+    end
+        
     T2 = Tm + 3; %need an initial guess for T2
     %Calculate initial fluxes
     Qdot_e = Qdot_e_initial(Te, Tm, T2, Lc, La, U);
@@ -208,8 +287,8 @@ function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Q
         Ts_e = Ts_e_guess(Te, Qdot_e, U);
         Ts_b = Ts_b_guess(Tb, Qdot_b, Ts);
         Ts = Ts_guess_initial(Ts_e, Ts_b);
-        T2 = T2_guess(Qdot_tot, Lc, T2)
-        T3 = T3_guess(Qdot_tot, Ts, Lc)
+        T2 = T2_guess(Qdot_tot, Lc, T2);
+        T3 = T3_guess(Qdot_tot, Ts, Lc);
         Tm = Tm_a_guess(T2, T3);
         %Update guesses for fluxes
         Qdot_e = Qdot_e_good(Te, Ts, U);
