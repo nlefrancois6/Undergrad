@@ -1,9 +1,9 @@
 %clear all;
 %close all;
-testCase = 'Covered'; %Can be 'Uncovered' or 'Covered', or 'Debug'
+testCase = 'Uncovered'; %Can be 'Uncovered' or 'Covered', or 'Debug'
 %% Define pool geometry, material, and environmental data
 L = 2; W = 2; D = 1; A = L*W; V = L*W*D; %Pool geometry
-Tw = 298; %Water temperature we want to maintain
+Tw = 310; %Water temperature we want to maintain
 cp_w = 4181; rho_w = 997; 
 mu_w = 0.891*1e-3; k_w = 0.6;
 eps_w = 0.955; n_w = 1.33; %water data
@@ -13,13 +13,14 @@ n_a = 1; k_a = 0.02364; %air data
 sig = 5.67*1e-8; %Stefan-Boltzmann constant
 
 %Reflective losses
-alpha = @(n) 1 - (n-1)/(n+1);
+alpha = @(n) 1 - ((n-1)/(n+1))^2;
 alpha_w = alpha(n_w); alpha_c = alpha(n_c); alpha_a = alpha(n_a);
 
 %Load the weather data for Alert over our 3 month period
-weatherData = csvread('Alert-CSV-for-noah-noHeader.csv');
+weatherData = csvread('Alert-CSV-for-noah-horizontal.csv');
 Us = weatherData(:,3); %Wind speed (m/s)
-irradiances = weatherData(:,2); %Direct normal radiation (kJ/m2)
+%irradiances = weatherData(:,2); %Direct normal radiation (kJ/m2)
+irradiances = weatherData(:,2); %Global Horizontal radiation (J/m2)
 Tes = weatherData(:,1) + 273; %Dry bulb temperature (C) converted to (K)
 Tbs = Tes - 10;
 
@@ -51,7 +52,7 @@ if strcmp(testCase,'Uncovered')
         Qdot_rad = Qdot_rad_func(t);
         Qdot_conv = Qdot_conv_func(t);
         Qdot_tot = Qdot_tot_func(t);
-        %If the solar heating exceeds the lossed flux, no heating is necessary
+        %If the solar heating exceeds the lost flux, no heating is necessary
         if Qdot_solar(t) < Qdot_tot
         Qdot_heating_uncovered = Qdot_tot - Qdot_solar(t);
         else
@@ -59,6 +60,7 @@ if strcmp(testCase,'Uncovered')
         end
         powerCumulative(t) = Qdot_heating_uncovered + sum(powerUsage);
         powerUsage(t) = Qdot_heating_uncovered;
+        loss_unfiltered(t) = Qdot_tot;
     end
     %Calculate total heating costs over the period of interest
     sumPower = sum(powerUsage);
@@ -161,6 +163,7 @@ if strcmp(testCase,'Covered')
     end
     powerCumulative(1) = Qdot_heating_covered + sum(powerUsage);
     powerUsage(1) = Qdot_heating_covered;
+    loss_unfiltered(1) = Qdot_tot;
 
     %Run the rest of the time steps, reusing Tm, Ts from last time step as initial guess
     for t=2:times
@@ -207,6 +210,11 @@ if strcmp(testCase,'Covered')
     ylabel('Cost ($)')
     title('Running Cost of Heating for Covered Pool')
 end
+
+%Q = 365; Qtot = 365*2208;
+%price = electricity_price(Qtot)
+
+
 
 %% Helper Functions
 function [Qdot_tot, Tm, Ts] = Qdot_convergence(Te, Tb, Tm, Ts, tol, Lc, La, U, Qdot_e_initial, Qdot_b_initial, Ts_e_guess, Ts_b_guess, Ts_guess_initial, T2_guess, T3_guess, Tm_a_guess, Qdot_e_good, Qdot_b_good)
