@@ -1,4 +1,4 @@
-function [Qdot_loss_rad, Qdot_loss_conv, Qdot_loss, rec_eff, Ta] = parabolic_trough_HT_model(mdot,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,Tf,eps_a,eps_s,verbose)
+function [Qdot_loss_rad, Qdot_loss_conv, Qdot_loss, rec_eff, Ta, fdarcy] = parabolic_trough_HT_model(mdot,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,Tf,eps_a,eps_s,verbose)
 %Perform the heat transfer analysis on our parabolic trough model to
 %evaluate losses, receiver efficiency, absorber temperature, ...
 
@@ -53,6 +53,8 @@ Qdot_loss_rad = pi*D2*sig*(eps_a*(Ta+273)^4 - eps_s*(Ts+273)^4);
 
 Qdot_loss = Qdot_loss_conv + Qdot_loss_rad;
 rec_eff = 1 - Qdot_loss/QdotS;
+
+%Qdot_balance = QdotS - Qdot_loss; %redundant, can calculate from QdotS*rec_eff
 
 if verbose
     message = ['Incoming Solar Radiation:', num2str(QdotS),' W/m, Heat Losses:',num2str(Qdot_loss),' W/m'];
