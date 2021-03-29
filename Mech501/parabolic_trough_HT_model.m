@@ -34,9 +34,11 @@ end
 %Calculate external absorber temperature in order to calculate Nu_e
 R_cond = log(r2/r1)/(2*pi*k_al); %R_cond = log(r2/r1)/(2*pi*k_al*L);
 R_conv_f = 1/(Nu_f*kf*pi); %R_conv_f = 1/(Nu_f*kf*pi*L);
-Ta = Tf + (R_cond+R_conv_f)*QdotS; %I think there is something wrong here
+%Ta = Tf + (R_cond+R_conv_f)*QdotS;
+Ta = Tf;
 
 %Dimensionless numbers of air
+%Write forced convection, look up average wind speed in Abu Dhabi
 Pr_e = 0.694; %direct from Yunus&Cengel
 Ra_e = (g*Be*(Ta-Te)*D2^3)/(alpha_e*ve);
 
@@ -50,8 +52,8 @@ Qdot_loss_conv = (Ta-Te)/R_conv_e;
 Ts = Te-20;
 Qdot_loss_rad = pi*D2*sig*(eps_a*(Ta+273)^4 - eps_s*(Ts+273)^4);
 
-%Qdot_loss = Qdot_loss_conv + Qdot_loss_rad;
-Qdot_loss = Qdot_loss_rad;
+Qdot_loss = Qdot_loss_conv + Qdot_loss_rad;
+%Qdot_loss = Qdot_loss_rad;
 
 rec_eff = 1 - Qdot_loss/QdotS;
 

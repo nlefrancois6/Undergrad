@@ -32,9 +32,11 @@ for i=1:Nm
     
     %Evaluate HT model
     [Qdot_loss_rad, Qdot_loss_conv, Qdot_loss, rec_eff, Ta] = parabolic_trough_HT_model(mdot,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,Tf,eps_a,eps_s,verbose);
+    %plot_trough = false;
+    %[L, Tf, Qdot_trough, rec_eff] = get_trough_performance(Ti,To,mdot,L,dL,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,eps_a,eps_s,verbose,plot_trough);
     
-    Ta_vals(i) = Ta;
-    rec_eff_vals(i) = rec_eff;
+    Ta_vals(i) = mean(Tf);
+    rec_eff_vals(i) = mean(rec_eff);
 
 end
 
@@ -50,14 +52,14 @@ ylabel('External Absorber Wall Temperature (K)')
 
 %% Determine length of a single trough given mdot, Ti, To
 
-mdot_opt = 0.1;
+mdot_opt = 0.005;
 %[Qdot_loss_rad, Qdot_loss_conv, Qdot_loss, rec_eff, Ta, fdarcy] = parabolic_trough_HT_model(mdot_opt,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,Tf,eps_a,eps_s,verbose);
 
 L = 0;
 dL = 1;
 
 plot_trough = true;
-[L, Tf_store, Qdot_trough_store, rec_eff_store] = get_trough_performance(Ti,To,mdot_opt,L,dL,QdotS,muf,cpf,kf,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,eps_a,eps_s,verbose,plot_trough);
+[L, Tf_store, Qdot_trough_store, rec_eff_store] = get_trough_performance(Ti,To,mdot_opt,L,dL,QdotS,muf,cpf,kf,rhof,rough,r1,r2,D1,D2,k_al,alpha_e,ve,ke,Be,Te,eps_a,eps_s,verbose,plot_trough);
 
 %{
 Tf_store = [];
@@ -105,6 +107,6 @@ disp(out)
 
 %v_avg = (4*mdot_opt)/(pi*rhof*D1^2); %Calculate average velocity
 v_avg = mdot_opt/(pi*r1^2);
-p_loss_parasitic = ((L*rhof*v_avg^2)/(D1*2))*fdarcy; %parasitic pressure loss along one trough
+%p_loss_parasitic = ((L*rhof*v_avg^2)/(D1*2))*fdarcy; %parasitic pressure loss along one trough
 
 
