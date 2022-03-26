@@ -1,6 +1,6 @@
 clear all;
 %% Define sampling domain
-T = 0.1; %final time
+T = 10; %final time
 xl = -50; xr = 50; %edges of computational domain
 dx = 1; %mesh size
 N = (xr-xl)/dx; %number of sampling pts
@@ -17,8 +17,8 @@ dt = R*dx/c; %dt calculated with constant Courant number
 %Richtmeyer stable for c*dt/dx<2, giving R<2
 
 rhoL = 1; rhoR = 1; %density 1 1
-uL = -19.59745; uR = -19.59745; %velocity 0 0
-pL = 1000; pR = 0.01; %pressure 1 2 %seems like p gets scaled by rho when it shouldn't
+uL = 0; uR = 0; %velocity 0 0
+pL = 1; pR = 2; %pressure 1 2 %seems like p gets scaled by rho when it shouldn't
 
 WL = [rhoL uL pL]; %left ICs 
 WR = [rhoR uR pR]; %right ICs

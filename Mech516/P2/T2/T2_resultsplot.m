@@ -17,8 +17,8 @@ dt = R*dx/c; %dt calculated with constant Courant number
 
 %I have L and R backwards compared to how the problem specifies
 rhoL = 1; rhoR = 1; %density 1 1
-uL = -19.59745; uR = -19.59745; %velocity 0 0
-pL = 1000; pR = 0.01; %pressure 1 2
+uL = 0; uR = 0; %velocity 0 0
+pL = 1; pR = 2; %pressure 1 2
 
 WL = [rhoL uL pL]; %left ICs 
 WR = [rhoR uR pR]; %right ICs
